@@ -85,7 +85,7 @@ class AppGestionWifi(ctk.CTk):
         self.key_entry = ctk.CTkEntry(self, placeholder_text="Nombre de Usuario / ID", width=300, height=40)
         self.key_entry.pack(pady=10)
 
-        self.tiempos_map = {"30 Minutos": 30, "1 Hora": 60, "2 Horas": 120}
+        self.tiempos_map = {"1 Minuto": 1, "5 Minutos": 5, "15 Minutos": 15, "30 Minutos": 30, "1 Hora": 60, "2 Horas": 120}
         self.time_menu = ctk.CTkOptionMenu(self, values=list(self.tiempos_map.keys()), width=300)
         self.time_menu.pack(pady=10)
         self.time_menu.set("1 Hora")
