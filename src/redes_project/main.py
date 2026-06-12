@@ -1,9 +1,8 @@
-import sys
+import subprocess
 
 import customtkinter as ctk
 
 from .backend import (
-    DependenciaFaltanteError,
     iniciar_backend_red,
     verificar_dependencias,
 )
@@ -17,22 +16,35 @@ def main():
     # --- Validación de entorno (NUEVA - Bloqueante) ---
     try:
         verificar_dependencias()
-    except DependenciaFaltanteError as e:
-        print(f"\n[ERROR CRÍTICO] {e}\n")
-        print("La aplicación no puede iniciar sin el motor de red.")
-        sys.exit(1)
 
-    ctk.set_appearance_mode("dark")
+
+
+        ctk.set_appearance_mode("dark")
 
     # Inicializar DB
-    init_db()
+        init_db()
 
     # Iniciar Motor
-    iniciar_backend_red()
+        iniciar_backend_red()
 
     # Lanzar GUI
-    app = AppGestionWifi()
-    app.mainloop()
+        app = AppGestionWifi()
+
+        def al_cerrar_ventana():
+            print("\n>>> Cerrando interfaz gráfica y liberando recursos de red...")
+            try:
+                subprocess.run(["sudo", "systemctl", "stop", "radiusd"], capture_output=True)
+            except:
+                pass
+            app.destroy()
+
+        app.protocol("WM_DELETE_WINDOW", al_cerrar_ventana)
+        app.mainloop()
+
+    finally:
+        # Esto se ejecuta si cierras el programa con Ctrl+C en la terminal
+        print("\n>>> [SISTEMA] Aplicación finalizada. Deteniendo motor FreeRADIUS de forma segura...")
+        subprocess.run(["sudo", "systemctl", "stop", "radiusd"], capture_output=True)
 
 
 if __name__ == "__main__":
