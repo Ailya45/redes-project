@@ -1,16 +1,19 @@
-# src/redes_project/database.py
+"""Gestión de la base de datos y compatibilidad con FreeRADIUS."""
+
 import secrets
 import sqlite3
 import string
 from datetime import datetime
+from pathlib import Path
 
-DB_NAME = "/var/lib/radiusd/radius_keys.db"
+DB_NAME = Path("/var/lib/radiusd/radius_keys.db")
+
 
 def init_db():
     """Crea la base de datos, la vista para FreeRADIUS, tablas dummy y configura WAL."""
     conn = None
     try:
-        conn = sqlite3.connect(DB_NAME, timeout=30)
+        conn = sqlite3.connect(DB_NAME.as_posix(), timeout=30)
         conn.execute("PRAGMA journal_mode=WAL;")
         cursor = conn.cursor()
 
@@ -30,13 +33,13 @@ def init_db():
         # 2. CREAR LA VISTA TRADUCTORA PARA FREERADIUS (radcheck)
         cursor.execute("""
             CREATE VIEW IF NOT EXISTS radcheck AS
-            SELECT 
-                id, 
-                access_key AS username, 
-                'Cleartext-Password' AS attribute, 
-                ':=' AS op, 
+            SELECT
+                id,
+                access_key AS username,
+                'Cleartext-Password' AS attribute,
+                ':=' AS op,
                 password AS value
-            FROM keys 
+            FROM keys
             WHERE status = 'active';
         """)
 
@@ -76,7 +79,7 @@ def registrar_llave(user_id, minutos):
         inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Conexión robusta con 30 segundos de tolerancia a esperas
-        conn = sqlite3.connect(DB_NAME, timeout=30)
+        conn = sqlite3.connect(DB_NAME.as_posix(), timeout=30)
         conn.execute("PRAGMA journal_mode=WAL;")
         cursor = conn.cursor()
 
@@ -105,5 +108,6 @@ def registrar_llave(user_id, minutos):
             print("[DB SYSTEM] Conexión cerrada y liberada de forma segura.")
 
 def generar_contraseña_segura(longitud=8):
+    """Genera una contraseña alfanumérica segura de longitud fija."""
     caracteres = string.ascii_letters + string.digits
     return "".join(secrets.choice(caracteres) for _ in range(longitud))

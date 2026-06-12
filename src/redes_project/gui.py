@@ -1,4 +1,6 @@
-# src/redes_project/gui.py
+"""Interfaz gráfica para la generación de accesos Wi-Fi y visualización de credenciales."""
+
+import os
 from tkinter import messagebox
 
 import customtkinter as ctk
@@ -8,7 +10,7 @@ from .database import registrar_llave
 # =================================================================
 # CONFIGURACIÓN DE LA RED WI-FI (Ajusta esto según tu Router)
 # =================================================================
-SSID_WIFI = "Red_Unefa_5G"  # <-- Nombre exacto de tu señal Wi-Fi
+SSID_WIFI = os.getenv("SSID_WIFI", "Red_Unefa_5G")  # Nombre exacto de la señal Wi-Fi
 
 # =================================================================
 # VENTANA EMERGENTE PARA MOSTRAR CREDENCIALES DE ACCESO

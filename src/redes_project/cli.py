@@ -5,6 +5,7 @@ import sys
 
 
 def start():
+    """Ejecuta la aplicación principal mediante el módulo de Python."""
     result = subprocess.run(
         [sys.executable, "-m", "redes_project.main", *sys.argv[1:]]
     )
@@ -12,6 +13,7 @@ def start():
 
 
 def check():
+    """Ejecuta Pyright para validar tipos y la estructura del proyecto."""
     try:
         result = subprocess.run([sys.executable, "-m", "pyright", "."])
         sys.exit(result.returncode)
@@ -21,6 +23,7 @@ def check():
 
 
 def lint():
+    """Lanza Ruff para encontrar problemas de formato y estilo."""
     try:
         result = subprocess.run(["ruff", "check", "."])
         sys.exit(result.returncode)
@@ -30,4 +33,5 @@ def lint():
 
 
 def fix():
+    """Aplica correcciones automáticas de formato y estilo con Ruff."""
     subprocess.run(["ruff", "check", ".", "--fix"])

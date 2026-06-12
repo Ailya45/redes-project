@@ -1,11 +1,13 @@
-# src/redes_project/router_control.py
+"""Control del router TP-Link mediante automatización con Playwright."""
+
+import os
 import time
 
 from playwright.sync_api import sync_playwright
 
-ROUTER_IP = "192.168.0.1"  # IP de tu Archer C50
-USER = "admin"
-PASS = "oro29$$87*"         # Tu contraseña real del router
+ROUTER_IP = os.getenv("ROUTER_IP", "192.168.0.1")  # Ajusta según la red local
+ROUTER_USER = os.getenv("ROUTER_USER", "admin")
+ROUTER_PASS = os.getenv("ROUTER_PASS", "oro29$$87*")
 BASE_URL = f"http://{ROUTER_IP}"
 
 class TPLinkController:
@@ -27,7 +29,10 @@ class TPLinkController:
             try:
                 # 1. IR AL ROUTER Y HACER LOGIN
                 page.goto(BASE_URL, timeout=10000)
-                page.fill("input[type='password']", PASS)
+                username_input = page.query_selector("input[type='text']")
+                if username_input:
+                    username_input.fill(ROUTER_USER)
+                page.fill("input[type='password']", ROUTER_PASS)
                 page.click("button#login-btn, input[type='submit'], .login-button, a.button-button")
                 page.wait_for_load_state("networkidle")
 
@@ -70,7 +75,10 @@ class TPLinkController:
             try:
                 # 1. LOGIN
                 page.goto(BASE_URL, timeout=10000)
-                page.fill("input[type='password']", PASS)
+                username_input = page.query_selector("input[type='text']")
+                if username_input:
+                    username_input.fill(ROUTER_USER)
+                page.fill("input[type='password']", ROUTER_PASS)
                 page.click("button#login-btn, input[type='submit'], .login-button, a.button-button")
                 page.wait_for_load_state("networkidle")
 

@@ -1,20 +1,24 @@
-# src/redes_project/scheduler.py
+"""Planificador de expiraciones, bloqueo y liberación de MACs en el router."""
+
 import sqlite3
 import threading
 import time
 from datetime import datetime
 
+from .database import DB_NAME
 from .router_control import TPLinkController
 
-DB_NAME = "/var/lib/radiusd/radius_keys.db"
+SLEEP_SECONDS = 5
+
 
 def verificar_y_limpiar_expiraciones():
+    """Monitorea tokens activos y gestiona la limpieza de la base de datos y el router."""
 
     router = TPLinkController()
 
     print("\n" + "=" * 65)
     print("[SCHEDULER] Guardián de infraestructura activado (Modo Batch Sincronizado).")
-    print(f"[SCHEDULER] Monitoreando DB: {DB_NAME}")
+    print(f"[SCHEDULER] Monitoreando DB: {DB_NAME.as_posix()}")
     print("=" * 65 + "\n")
 
     while True:
@@ -24,7 +28,7 @@ def verificar_y_limpiar_expiraciones():
         tokens_a_expirar = []
         conn = None
         try:
-            conn = sqlite3.connect(DB_NAME, timeout=30)
+            conn = sqlite3.connect(DB_NAME.as_posix(), timeout=30)
             conn.execute("PRAGMA journal_mode=WAL;")
             cursor = conn.cursor()
 
@@ -43,7 +47,8 @@ def verificar_y_limpiar_expiraciones():
         except Exception as e:
             print(f"[SCHEDULER DB ERROR - FASE 1]: {e}")
         finally:
-            if conn: conn.close()
+            if conn:
+                conn.close()
 
         # =================================================================
         # FASE 2: EVICCIONES EN ROUTER Y ACTUALIZACIÓN EN LOTE (BULK UPDATE)
@@ -62,7 +67,7 @@ def verificar_y_limpiar_expiraciones():
 
             # 2. Abrir la DB UNA SOLA VEZ para guardar todos los cambios del lote
             try:
-                conn = sqlite3.connect(DB_NAME, timeout=30)
+                conn = sqlite3.connect(DB_NAME.as_posix(), timeout=30)
                 conn.execute("PRAGMA journal_mode=WAL;")
                 cursor = conn.cursor()
                 ahora_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -75,14 +80,15 @@ def verificar_y_limpiar_expiraciones():
             except Exception as e:
                 print(f"[SCHEDULER DB ERROR - BATCH EXPIRAR]: {e}")
             finally:
-                if conn: conn.close()
+                if conn:
+                    conn.close()
 
         # =================================================================
         # FASE 3: DETECTAR PENALIZACIONES CONCLUIDAS (CONEXIÓN RELÁMPAGO)
         # =================================================================
         tokens_a_liberar = []
         try:
-            conn = sqlite3.connect(DB_NAME, timeout=30)
+            conn = sqlite3.connect(DB_NAME.as_posix(), timeout=30)
             conn.execute("PRAGMA journal_mode=WAL;")
             cursor = conn.cursor()
             cursor.execute("SELECT id, access_key, fecha_inicio, mac_address FROM keys WHERE status = 'blacklisted'")
@@ -100,7 +106,8 @@ def verificar_y_limpiar_expiraciones():
         except Exception as e:
             print(f"[SCHEDULER DB ERROR - FASE 3]: {e}")
         finally:
-            if conn: conn.close()
+            if conn:
+                conn.close()
 
         # =================================================================
         # FASE 4: REMOCIÓN EN ROUTER Y ELIMINACIÓN ABSOLUTA DE LA DB
@@ -117,7 +124,7 @@ def verificar_y_limpiar_expiraciones():
 
             # 2. Abrir la DB UNA SOLA VEZ para ELIMINAR los tokens y liberar sus nombres
             try:
-                conn = sqlite3.connect(DB_NAME, timeout=30)
+                conn = sqlite3.connect(DB_NAME.as_posix(), timeout=30)
                 conn.execute("PRAGMA journal_mode=WAL;")
                 cursor = conn.cursor()
 
@@ -131,7 +138,8 @@ def verificar_y_limpiar_expiraciones():
             except Exception as e:
                 print(f"[SCHEDULER DB ERROR - BATCH LIBERAR]: {e}")
             finally:
-                if conn: conn.close()
+                if conn:
+                    conn.close()
 
         # Escaneo pasivo cada 5 segundos
         time.sleep(5)

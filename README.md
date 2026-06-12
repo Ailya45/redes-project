@@ -1,156 +1,160 @@
 # Sistema de Gestión de Acceso Wi-Fi
 
-Este proyecto implementa un sistema de control de acceso a redes inalámbricas utilizando el protocolo **RADIUS**. Combina una interfaz gráfica multiplataforma para la gestión de usuarios y un motor de autenticación robusto en Linux (WSL en Windows o nativo en Linux).
+Este proyecto implementa un sistema de control de acceso a redes inalámbricas basado en **FreeRADIUS**, una base de datos SQLite y una interfaz de usuario en Python. El backend está diseñado para ser agnóstico y ejecutarse en Linux (con soporte optimizado para Fedora y derivadas de Debian), donde verifica de forma dinámica las dependencias del sistema, administra el ciclo de vida del servicio (`radiusd` o `freeradius`), y arranca un planificador asíncrono que gestiona expiraciones y penalizaciones.
 
-## 🚀 Descripción del Flujo
+## 🚀 Flujo general del sistema
 
-1. **Interfaz gráfica:** Una App en Python (CustomTkinter) genera llaves de acceso y las guarda en una base de datos SQLite compartida.
-2. **Motor RADIUS:** El servidor FreeRADIUS monitorea la base de datos y autoriza las conexiones del Router.
-3. **Hardware:** El Router actúa como cliente NAS, solicitando validación mediante WPA2-Enterprise.
-
----
-
-## 💻 Apartado 1: Instalación y ejecución de la aplicación de gestión
-
-La aplicación puede ejecutarse en **Windows** (con WSL activado para FreeRADIUS) o directamente en **Linux**. Se ofrecen dos métodos para ponerla en marcha.
-
-### 1.1 Requisitos previos comunes
-
-- **Python 3.10 o superior**
-- Acceso a terminal (PowerShell en Windows, Bash en Linux)
-- WSL instalado si estás en Windows (ver Apartado 2)
-- FreeRADIUS configurado en WSL/Linux (ver Apartado 2)  
-  _La aplicación verifica la presencia de FreeRADIUS antes de abrir la interfaz gráfica. Si no lo encuentra, mostrará un error y no arrancará._
-
-### 1.2 Método A: Usar UV (si ya lo tienes instalado)
-
-[UV](https://docs.astral.sh/uv/) es un gestor de paquetes y entornos ultrarrápido. Si aún no lo tienes, puedes instalarlo con `pip install uv`, pero **estas instrucciones asumen que ya está disponible** en tu sistema.
-
-1. Clona o descarga el proyecto y navega a la carpeta raíz (donde se encuentra `pyproject.toml`).
-   ```bash
-   git clone https://github.com/Ailya45/redes-project.git
-   cd redes-project 
-   ```
-2. Ejecuta la aplicación:
-   ```bash
-   uv run start
-   ```
-   _(El comando `start` está definido en `[project.scripts]` del archivo `pyproject.toml`)_
-
-### 1.3 Método B: Python vanilla (con pip y venv)
-
-1. Clona o descarga el proyecto y navega a la carpeta raíz (donde se encuentra `pyproject.toml`).
-   ```bash
-   git clone https://github.com/Ailya45/redes-project.git
-   cd redes-project 
-   ```
-2. Crea y activa un entorno virtual (opcional pero recomendado):
-
-   ```powershell
-   # Windows
-   python -m venv .venv
-   .venv\Scripts\activate
-
-   # Linux
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-
-3. Instala el proyecto en modo editable (esto lee las dependencias de `pyproject.toml`):
-   ```bash
-   pip install -e .
-   ```
-4. Ejecuta la aplicación:
-   ```bash
-   python -m redes_project.main
-   ```
+1. **Verificación:** La aplicación arranca y comprueba mediante el backend que el binario de FreeRADIUS esté disponible en el `$PATH` del sistema, identificando si opera bajo el nombre de `radiusd` (Fedora/RHEL) o `freeradius` (Debian/Ubuntu).
+2. **Inicialización:** Se vincula la base de datos local `radius_keys.db` y se utiliza la vista `radcheck` para que FreeRADIUS pueda consultar en tiempo real los usuarios activos y sus credenciales.
+3. **Despliegue del Motor:** La aplicación eleva privilegios mediante `sudo` de forma controlada para iniciar el demonio de red (`systemctl start`).
+4. **Control e Interfaz:** Se levanta la interfaz gráfica (GUI) construida con CustomTkinter para administrar la creación de llaves de acceso.
+5. **Monitoreo (Guardián):** Un hilo asíncrono en segundo plano (`scheduler.py`) inspecciona periódicamente los tokens. Al expirar un tiempo de acceso, se conecta al router mediante la automatización de Playwright y expulsa/bloquea la dirección MAC asociada.
+6. **Liberación:** Tras cumplirse el tiempo de penalización en la lista negra, el guardián remueve la MAC del router y limpia el registro de la base de datos local.
 
 ---
 
-## 🐧 Apartado 2: Configuración de FreeRADIUS (Linux / WSL)
+## 📦 Requisitos del Sistema
 
-Abre la terminal de Ubuntu (o tu distribución WSL) y sigue estos pasos:
+* **Python 3.12** o superior.
+* **Linux** (Probado y optimizado nativamente en **Fedora Linux**).
+* Privilegios de **`sudo`** configurados para el usuario que ejecuta la aplicación (necesario para la gestión de servicios mediante `systemctl`).
+* Navegador **Chromium** instalado y accesible para las tareas de automatización de Playwright.
 
-### 2.1 Instalación de FreeRADIUS
+---
 
-```bash
-sudo apt update
-sudo apt install freeradius freeradius-utils freeradius-sqlite3 -y
-```
+## 🔧 Instalación y Configuración del Entorno (Fedora)
 
-### 2.2 Vinculación con la Base de Datos de Windows
+Antes de ejecutar la aplicación, es indispensable preparar el entorno de red de Linux para asegurar que el motor FreeRADIUS no aborte su ejecución debido a políticas estrictas de cifrado o permisos de archivos.
 
-1. Editar el módulo SQL:
-   ```bash
-   sudo nano /etc/freeradius/3.0/mods-available/sql
-   ```
-2. Modificar la sección `sqlite` (mapeando `C:` como `/mnt/c/`):
+### 1. Instalar dependencias del sistema operativo
 
-   ```conf
-   driver = "rlm_sql_sqlite"
-
-   sqlite {
-       # Ejemplo: si tu ruta en Windows es C:\Users\Bermys\Proyecto
-       filename = "/mnt/c/Users/TU_USUARIO/RUTA_PROYECTO/radius_keys.db"
-   }
-   ```
-
-### 2.3 Lógica de Expulsión Automática
-
-Editar el archivo de consultas para que el servidor calcule el tiempo restante:
+Instala el servidor RADIUS junto a las utilidades de desarrollo y clientes de prueba:
 
 ```bash
-sudo nano /etc/freeradius/3.0/mods-config/sql/main/sqlite/queries.conf
+sudo dnf install freeradius freeradius-utils
 ```
 
-Buscar `authorize_reply_query` y reemplazar por:
+### 2. Inicializar los Certificados de Seguridad (Obligatorio)
 
-```sql
-authorize_reply_query = "SELECT id, access_key, 'Session-Timeout' AS attribute, \
-((duracion_minutos * 60) - (strftime('%%s','now', 'localtime') - strftime('%%s', fecha_inicio))) AS value, \
-'=' AS op FROM keys WHERE access_key = '%%{User-Name}'"
-```
-
-### 2.4 Alta del Router (Cliente NAS)
+FreeRADIUS incluye por defecto el módulo EAP-TLS activo. Si las llaves criptográficas de desarrollo no están generadas, el servicio fallará en el arranque (`exit-code`). Para crearlas, ejecuta el script de inicialización elevando privilegios a root:
 
 ```bash
-sudo nano /etc/freeradius/3.0/clients.conf
+sudo -i
+cd /etc/raddb/certs/
+./bootstrap
+exit
 ```
 
-Añadir al final:
+### 3. Crear el Enlace Simbólico de Compatibilidad
 
-```conf
-client router_unefa {
-    ipaddr = *
-    secret = unefa2026
-}
-```
-
-### 2.5 Activación y Modo Debug
-
-Activar el módulo SQL:
+Dado que la aplicación y otros submódulos de red pueden buscar el binario bajo la nomenclatura estándar de Debian (`freeradius`), crea un enlace simbólico apuntando al binario nativo de Fedora (`radiusd`):
 
 ```bash
-# Crear enlace simbólico para activar SQL
-sudo ln -s /etc/freeradius/3.0/mods-available/sql /etc/freeradius/3.0/mods-enabled/
+sudo ln -s /usr/sbin/radiusd /usr/bin/freeradius
+```
 
-# Detener servicio de fondo e iniciar en modo visual
-sudo service freeradius stop
-sudo freeradius -X
+### 4. Configurar Permisos de la Base de Datos Local
+
+La base de datos del proyecto se aloja en el espacio local de trabajo dentro de la carpeta del proyecto (por ejemplo: `~/Escritorio/redes-project/radius_keys.db`).
+
+Para que tanto tu usuario de desarrollo como el demonio de red de Fedora (`radiusd`) tengan capacidades de lectura y escritura simultánea sobre el archivo `.db`, utiliza las variables del sistema (`$USER` y `~`) para ajustar el propietario del grupo y los permisos de forma universal:
+
+```bash
+sudo chown $USER:radiusd ~/Escritorio/redes-project/radius_keys.db
+sudo chmod 660 ~/Escritorio/redes-project/radius_keys.db
+```
+
+### 5. Configurar el Firewall de Fedora
+
+Por defecto, Fedora bloquea conexiones externas directas. Si necesitas que el servidor escuche peticiones externas o de dispositivos de la red local, abre los puertos UDP correspondientes al protocolo RADIUS (`1812` para autenticación y `1813` para contabilidad):
+
+```bash
+sudo firewall-cmd --add-service=radius --permanent
+sudo firewall-cmd --reload
 ```
 
 ---
 
-## 🛠 Solución de Problemas
+## 💻 Instalación y Ejecución del Proyecto
 
-- **Address already in use:** El servicio se inició solo. Usa `sudo service freeradius stop`.
-- **Permisos:** Si FreeRADIUS no puede leer la base de datos, otorga permisos amplios (solo en desarrollo):
-  ```bash
-  sudo chmod 777 "/mnt/c/Ruta/A/Tu/Archivo.db"
-  ```
-- **Prueba rápida (sin router):** Abre otra terminal de WSL y escribe:
-  ```bash
-  radtest usuario contraseña localhost 0 unefa2026
-  ```
-- **La aplicación no inicia y muestra `[ERROR CRÍTICO]`:**  
-  Indica que FreeRADIUS no fue encontrado. Asegúrate de haber instalado FreeRADIUS en WSL o en Linux nativo y de que el binario `freeradius` esté accesible. En Windows, verifica que WSL esté correctamente instalado y que la distribución Linux tenga FreeRADIUS. La aplicación no arrancará hasta que esta dependencia esté resuelta.
+Una vez configurado el sistema operativo, clona y despliega la aplicación de Python:
+
+### 1. Clonar el repositorio
+
+```bash
+git clone https://github.com/Ailya45/redes-project.git
+cd redes-project
+```
+
+### 2. Configurar el entorno virtual e instalar dependencias
+
+Se recomienda el uso del gestor moderno `uv` para automatizar la instalación de paquetes en modo editable:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+### 3. Ejecutar la aplicación
+
+Puedes iniciar el flujo completo de la GUI y el backend usando el gestor de tareas:
+
+```bash
+uv run start
+```
+
+O directamente invocando el módulo central de Python:
+
+```bash
+python -m redes_project.main
+```
+
+---
+
+## 🧠 Comportamiento de los Módulos del Backend
+
+* **`src/redes_project/backend.py`:** Detecta de forma dinámica la distribución a través de `/etc/os-release` y verifica mediante `shutil.which` la presencia de los ejecutables. Controla el aislamiento del arranque enviando señales limpias a `systemctl start` y `systemctl stop` de acuerdo al entorno detectado.
+* **`src/redes_project/database.py`:** Mantiene y actualiza de manera local la base de datos SQLite corporativa, estructurando la tabla principal `keys` y desplegando la vista virtualizada `radcheck` para alimentar las consultas de credenciales de FreeRADIUS en formato `Cleartext-Password`.
+* **`src/redes_project/scheduler.py`:** Levanta el daemon que gestiona de manera asíncrona la expiración de las sesiones. Al detectar que una sesión caducó, cambia el estado en la base de datos a `blacklisted`, invoca al controlador del router y, una vez cumplido el tiempo de penalización (configurado por defecto en 1.5 minutos para desarrollo), purga el registro de la red de manera transparente.
+
+---
+
+## 🌐 Automatización del Router
+
+El aislamiento del tráfico de red se delega a las directivas de control web programadas en `src/redes_project/router_control.py` mediante **Playwright**:
+
+* `agregar_a_lista_negra(mac_address)`: Accede a la interfaz web administrativa del enrutador por medio de un navegador headless, se autentica de forma segura, navega al panel de seguridad avanzada y añade la dirección MAC a la lista negra global del dispositivo.
+* `remover_de_lista_negra(mac_address)`: Localiza el registro de la dirección física dentro de la tabla interactiva de exclusión y remueve su restricción para reactivar el tráfico de manera instantánea.
+
+> ⚠️ **Nota:** Las variables de entorno críticas como `ROUTER_IP`, `USER`, y `PASS` se configuran internamente en el script. Asegúrate de modificarlas para que coincidan con los selectores de la interfaz de tu router físico.
+
+---
+
+## 🧪 Pruebas Internas de Red (La Prueba Reina)
+
+Si deseas verificar de forma aislada que el motor FreeRADIUS responde de manera correcta a las solicitudes de acceso antes de iniciar la interfaz gráfica, puedes utilizar un cliente emulador de terminal enviando credenciales de prueba preconfiguradas en el entorno local (Usuario: `testing`, Contraseña: `password`, Shared Secret: `testing123`):
+
+```bash
+radtest testing password localhost 0 testing123
+```
+
+El entorno estará configurado de forma óptima cuando la salida del comando retorne una estructura idéntica a esta:
+
+```text
+Sent Access-Request Id 84 to 127.0.0.1:1812 length 77
+Received Access-Accept Id 84 from 127.0.0.1:1812 length 73
+    Reply-Message = "¡Bienvenido a la red de pruebas!"
+```
+
+---
+
+## 🛠️ Herramientas de Calidad de Código
+
+El proyecto implementa linters y validadores estáticos estrictos para garantizar la estabilidad del desarrollo. Puedes ejecutar las baterías de pruebas locales mediante:
+
+```bash
+uv run lint   # Inspecciona el estilo con Ruff
+uv run check  # Validación de tipos estáticos con Pyright
+uv run fix    # Aplica autoformateo al código fuente
+```

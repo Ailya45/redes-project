@@ -1,4 +1,5 @@
-# test_router.py
+"""Caso de prueba manual para el controlador TP-Link."""
+
 import sys
 import time
 
